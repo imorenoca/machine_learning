@@ -1,0 +1,456 @@
+---
+title: "Actividad: Aprendizaje Automático y Regresión Lineal Simple"
+author: "María Isabel Moreno Carreño"
+lang: es
+output: 
+  pdf_document :
+    
+    latex_engine: xelatex
+    toc: true 
+  word_document :
+  html_document :
+linkcolor: blue
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r, message=FALSE, warning=FALSE}
+#Si da error generando el pdf, usa estos comandos:
+#install.packages("tinytex")
+#tinytex::tlmgr_install("xetex")
+#install.packages("skimr") # Descomenta si no lo tienes
+#install.packages("lmtest") # Descomenta si no lo tienes
+# Cargar las librerías necesarias
+library(readr)
+library(ggplot2)
+library(scales)
+library(tidyverse)
+library(dplyr)
+library(car)
+library(corrplot)
+library(ggpubr)
+library(skimr)
+library(lmtest)
+
+```
+
+# Introducción.
+
+Este trabajo pretende utilizar el ejercicio de *Creación de un modelo de aprendizaje automático*
+para hacer una análisis estadístico en R, un modelo de regresión lineal simple.
+
+## Pasos del análisis de regresión lineal simple
+
+1. **Exploración inicial y análisis de correlación**  
+   - Visualizar la relación entre `harness_size` y `boot_size` con un gráfico de dispersión.  
+   - Calcular el coeficiente de correlación de Pearson para determinar la fuerza y dirección de la relación.
+
+2. **Ajuste inicial del modelo de regresión lineal simple**  
+   - Estimar el modelo con todas las observaciones para obtener una primera aproximación de la relación. Comprobar la linealidad
+
+3. **Evaluación de los supuestos del modelo**  
+   - Comprobar la normalidad de los residuos (test de Shapiro-Wilk, QQ plot).  
+   - Evaluar la homocedasticidad (test de Breusch-Pagan).  
+   - Verificar la independencia de los residuos (test de Durbin-Watson).  
+   - Comprobar la linealidad con el gráfico de residuos vs. valores ajustados.
+
+4. **Partición del conjunto de datos**  
+   - Dividir el dataset en conjunto de entrenamiento (80%) y conjunto de prueba (20%) de forma aleatoria y reproducible.
+
+5. **Entrenamiento del modelo**  
+   - Ajustar el modelo de regresión lineal simple utilizando solo el conjunto de entrenamiento.
+
+6. **Predicción sobre el conjunto de prueba**  
+   - Predecir los valores de `boot_size` en el conjunto de prueba.  
+   - Comparar las predicciones con los valores reales.
+
+7. **Validación de los supuestos en el modelo entrenado**  
+   - Revisar que los residuos del modelo ajustado en el conjunto de entrenamiento cumplen los supuestos estadísticos.
+
+8. **Evaluación cuantitativa y visual del modelo**  
+   - Calcular el Error Cuadrático Medio (MSE) y la Raíz del Error Cuadrático Medio (RMSE).  
+   - Visualizar las predicciones frente a los valores reales.  
+   - Interpretar el coeficiente de determinación (R²) y los coeficientes del modelo para entender el impacto del predictor.
+
+
+
+# Objetivos.
+Determinar si el tamaño del arnés de nieve para perros se puede utilizar para 
+predecir el número de bota para el perro.
+
+# 1. Hipótesis.
+
+*Hipótesis nula*: No hay correlación entre el tamaño del arnés y el tamaño de la 
+bota.  
+*Hipótesis alternativa*: Hay correlación entre el tamaño del arnés y el tamaño de 
+la bota.
+
+# 2. Carga de datos.
+
+Creación de variables con los datos a tratar.
+- Formatos / Tipos de datos: Datos Númericos.
+- Que escala de medida tienen los datos.
+
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+# Crear el data frame directamente a partir de los vectores
+data <- data.frame(
+    boot_size = c(39, 38, 37, 39, 38, 35, 37, 36, 35, 40, 
+                  40, 36, 38, 39, 42, 42, 36, 36, 35, 41, 
+                  42, 38, 37, 35, 40, 36, 35, 39, 41, 37, 
+                  35, 41, 39, 41, 42, 42, 36, 37, 37, 39,
+                  42, 35, 36, 41, 41, 41, 39, 39, 35, 39),
+                  
+    harness_size = c(58, 58, 52, 58, 57, 52, 55, 53, 49, 54,
+                     59, 56, 53, 58, 57, 58, 56, 51, 50, 59,
+                     59, 59, 55, 50, 55, 52, 53, 54, 61, 56,
+                     55, 60, 57, 56, 61, 58, 53, 57, 57, 55,
+                     60, 51, 52, 56, 55, 57, 58, 57, 51, 59)
+)
+
+# Tipo de datos de cada columna.
+glimpse(data)
+class(data$boot_size) # Tipo de dato de la columna boot_size
+class(data$harness_size) # Tipo de dato de la columna harness_size
+
+str(data)
+summary(data)
+
+```
+En este caso, no se realiza preparación de los datos, ya que son datos que se 
+han generado directamente en el código, y no se han cargado desde un fichero.
+
+# 3. Exploración inicial y análisis de correlación.
+
+Las variables son cuantitativas, se puede utilizar cor. Se calcula la matriz de
+correlación lineal. 
+
+Lo más importante al principio es calcular la correlación entre las variables,
+si no hubiera se acepta la hipóteis nula, el tamaño del arnés no puede predecir
+el tamaño de la bota.
+
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+
+correlation_matrix<- cor(data[,1:2]) # matriz de correlación)
+correlation_df <- as.data.frame(as.table(correlation_matrix)) # Convertir a data frame
+correlation_matrix
+
+corrplot(correlation_matrix)
+
+# Filtrado quitando diagonal y duplicados - Sentido cuando son más variables.
+correlation_df_filtered <- correlation_df %>%
+filter(Var1 != Var2) %>%
+rowwise() %>%
+mutate(pair = paste(sort(c(Var1, Var2)), collapse = "_")) %>%
+ungroup() %>%
+distinct(pair, .keep_all = TRUE) %>%
+arrange(desc(Freq))
+# Ver resultados
+print(correlation_df_filtered)
+
+
+
+
+```
+
+Aplicando el siguiente cuadro de la Fuerza de la Correlación:
+r> 0.7: Correlación fuerte.
+0.3 < r <= 0.7: Correlación moderada.
+r<= 0.3: Correlación débil.
+
+La correlación entre las variables es fuerte. Aplicar las pruebas estadísticas 
+correspondientes para comprobar si la correlación es significativa.
+
+# 4. Ajuste inicial del modelo de regresión lineal simple.
+
+Primero se comprueba si el modelo se ajusta a la linealidad. 
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+modelo <- lm(boot_size ~ harness_size, data = data)
+
+
+
+# Comprobar la linealidad del modelo
+plot(data$harness_size, data$boot_size,
+     main = "Relación entre tamaño del arnés y tamaño de la bota",
+     xlab = "Tamaño del arnés",
+     ylab = "Tamaño de la bota")
+
+# Añadir la recta de regresión basada en el modelo completo
+abline(modelo, col = "blue", lwd = 2)
+
+summary(modelo)
+
+
+
+```
+p-valor < 0.001: Rechazamos H₀ (coeficiente = 0), y concluimos que harness_size
+explica significativamente boot_size.
+
+Intercepto - Es la talla estimada de bota cuando el tamaño del arnés es 0 (puede 
+no tener sentido físico, pero es necesario para el modelo matemático).
+
+harness_size 0.586 	Por cada unidad que aumenta el tamaño del arnés, la talla de 
+la bota aumenta 0.586 unidades, de forma promedio.
+
+R² es 0.569, significa que el modelo explica el 56.9% de la variabilidad en la 
+talla de bota se explica por el tamaño del arnés.
+
+# 5. Evaluación de los supuestos del modelo.  
+
+Para asegurarnos que el modelo es válido, se cumple la normalidad, 
+homocedasticidad e independencia de los residuos.
+
+## 5.1 Normalidad de los residuos.
+
+Comprobar la normalidad de los residuos para la validez del modelo.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+shapiro.test(residuals(modelo))
+qqnorm(residuals(modelo)); qqline(residuals(modelo))
+
+
+```
+
+Como p > 0.05, no se rechaza la hipótesis nula de normalidad de los residuos.
+
+Esto significa que los residuos del modelo pueden considerarse normales, lo cual 
+es un requisito clave para la validez de los intervalos de confianza y pruebas 
+t en regresión
+
+## 5.2 Homocedasticidad de los residuos.
+
+Estudia si la varianza es constante.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}  
+bptest(modelo)	
+
+
+```
+Como p > 0.05, no se rechaza la hipótesis nula de homocedasticidad.
+
+Esto significa que la varianza de los residuos es constante (no hay heterocedasticidad).
+
+Condición favorable para la validez del modelo de regresión lineal.
+
+## 5.3 Independencia de los residuos.
+
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+dwtest(modelo)	
+
+```
+Como p > 0.05, no hay evidencia estadística para rechazar la hipótesis nula de 
+independencia de residuos.
+
+Esto indica que no hay autocorrelación significativa positiva en los residuos.
+
+
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+library(ggplot2)
+
+ggplot(data, aes(x = harness_size, y = boot_size)) +
+  geom_point(color = "darkblue", size = 2) +            # Puntos observados
+  geom_smooth(method = "lm", se = TRUE, color = "red") + # Recta de regresión + IC
+  labs(
+    title = "Relación entre tamaño de arnés y talla de bota",
+    x = "Tamaño de arnés",
+    y = "Talla de bota"
+  ) +
+  theme_minimal()
+
+```
+
+# 6. Resumen de resultados.
+
+El modelo de regresión lineal simple muestra que el tamaño del arnés de nieve
+para perros puede predecir significativamente el tamaño de las botas. 
+
+La correlación entre las variables es fuerte, y el modelo explica
+el 56.9% de la variabilidad en la talla de bota, con un nivel de significancia
+p < 0.001. El coeficiente de regresión indica que por cada unidad que aumenta
+el tamaño del arnés, la talla de la bota aumenta en promedio 0.586 unidades.
+
+Los residuos cumplen con los supuestos de normalidad, homocedasticidad e 
+independencia, lo que valida el modelo. El tamaño del arnés es un predictor útil
+para determinar el tamaño de las botas de nieve para perros.
+
+Por tanto, se concluye que el tamaño del arnés es un predictor fiable para 
+estimar la talla de las botas de nieve para perros.
+
+Se recomienda incluir otras variables relacionadas para aumentar el porcentaje 
+de explicación del modelo, como la raza del perro, el peso o la edad, que pueden 
+aportar mayor precisión al modelo de predicción.  
+
+# 7. Preparación de los datos y Entrenamiento del modelo.
+
+El objetivo es dividir los datos en un conjunto de entrenamiento y otro de 
+prueba, para entrenar el modelo y luego predecir el tamaño de las botas en el 
+conjunto de prueba.
+
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+# Dividir los datos en conjunto de entrenamiento y prueba
+set.seed(123) # Para reproducibilidad
+train_indices <- sample(1:nrow(data), size = 0.8 * nrow(data))
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+
+
+# Entrenar el modelo de regresión lineal
+modelo_entrenado <- lm(boot_size ~ harness_size, data = train_data)
+# Resumen del modelo entrenado
+summary(modelo_entrenado)
+
+
+
+```
+El siguiente paso es predecir los valores con los datos que no han sido usados 
+para el entrenamiento.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+# Predecir en el conjunto de prueba
+predicciones <- predict(modelo_entrenado, newdata = test_data)
+
+# Comparar las predicciones con los valores reales
+
+resultados <- data.frame(
+  Real = test_data$boot_size,
+  Predicho = predicciones
+)
+print(resultados)
+
+```
+
+
+## 7.1 Evaluación de los supuestos del modelo entrenado.
+
+En este paso se comprueba los supuestos del modelo lineal en el modelo entrenado.  
+  
+- Normalidad de los residuos.  
+- Homocedasticidad de los residuos.  
+- Independencia de los residuos.  
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+# Comprobar la normalidad de los residuos
+shapiro.test(residuals(modelo_entrenado))
+# visualización de la normalidad.
+qqnorm(residuals(modelo_entrenado))
+qqline(residuals(modelo_entrenado), col = "red")
+
+
+# Comprobar la homocedasticidad de los residuos
+bptest(modelo_entrenado)
+# Visualización
+plot(modelo_entrenado$fitted.values, residuals(modelo_entrenado))
+abline(h = 0, col = "red")
+# Comprobar la independencia de los residuos
+dwtest(modelo_entrenado)
+
+
+
+
+par(mfrow = c(2, 2)) # Para mostrar dos gráficos en una fila
+plot(modelo_entrenado)
+```
+**Shapiro - Wilk: Normalidad.** 
+
+El p-valor > 0.05, no se rechaza la hipótesis nula → los residuos pueden 
+considerarse normales.
+
+**Breusch-Pagan: Homocedasticidad.**
+
+El p-valor > 0.05, no se rechaza la hipótesis nula → los residuos tienen varianza
+constante (no hay heterocedasticidad).
+
+**Durbin-Watson: Independencia de los residuos.**
+
+El p-valor > 0.05, no hay evidencia estadística para rechazar la hipótesis nula
+de independencia de residuos → no hay autocorrelación significativa positiva en
+los residuos.
+
+## 7.2 Linealidad del modelo entrenado
+
+Para comprobar la linealidad de la relación entre las variables, se puede 
+visualizar la relación entre el tamaño del arnés y la talla de bota, junto con
+la línea de regresión ajustada. Esto nos ayudará a ver si la relación es lineal.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+plot(train_data$harness_size, train_data$boot_size)
+abline(modelo_entrenado, col = "red")
+```
+
+
+## 7.3 Visualización predicciones frente a valores reales.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+library(ggplot2)
+
+ggplot(test_data, aes(x = harness_size, y = boot_size)) +
+  geom_point(color = "blue", size = 2) +  # Observaciones reales
+  geom_smooth(method = "lm", color = "red", se = FALSE) +  # Línea de regresión
+  geom_point(aes(y = predicciones), color = "green", size = 2) +  # Predicciones
+  labs(
+    title = "Predicción de la talla de bota a partir del tamaño del arnés",
+    x = "Tamaño del arnés",
+    y = "Talla de bota"
+  ) +
+  theme_minimal()
+```
+## 7.4 Evaluación cuantitativa del modelo.
+
+
+El siguiente paso es calcular el error cuadrático medio (MSE), este valor
+indica la precisión del modelo en las predicciones.
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+predicciones <- predict(modelo_entrenado, newdata = test_data)
+residuos_test <- test_data$boot_size - predicciones
+
+mse <- mean(residuos_test^2)
+rmse <- sqrt(mse)
+print(paste("MSE:", round(mse, 2)))
+print(paste("RMSE:", round(rmse, 2)))
+```
+El MSE es una medida de la precisión del modelo, cuanto más bajo sea, mejor será
+el modelo en términos de predicción. Un MSE de 2.86 indica que, en promedio,
+las predicciones del modelo se desvían de los valores reales en 2.86 unidades al
+cuadrado.
+El modelo se desvia en promedio ±1.69 unidades de la talla de bota real.
+
+# 8. Ejemplo de predicción.
+
+Calcular la talla de bota para un perro con un tamaño de arnés de 52.5
+
+```{r ,eval=TRUE,echo=TRUE,warning=FALSE}
+
+predict(modelo, newdata = data.frame(harness_size = 52.5))
+
+```
+
+
+# 9. Conclusiones finales.
+
+El análisis confirma que existe una relación lineal significativa entre el 
+tamaño del arnés y la talla de la bota. El modelo de regresión lineal simple 
+explica el 56.9% de la variabilidad en la talla de bota (R² = 0.569), y presenta
+un error cuadrático medio (MSE) de 2.86, lo que se traduce en un error promedio 
+de predicción (RMSE) de aproximadamente 1.69 unidades.
+
+Esto sugiere que, aunque el tamaño del arnés es un buen predictor, las 
+predicciones individuales pueden desviarse en torno a 1.69 unidades respecto al 
+valor real, por lo que sería recomendable incorporar otras variables 
+explicativas si se desea mejorar la precisión del modelo.
+
